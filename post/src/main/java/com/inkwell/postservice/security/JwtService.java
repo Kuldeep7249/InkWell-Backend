@@ -1,0 +1,61 @@
+package com.inkwell.postservice.security;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.security.Key;
+import java.util.function.Function;
+
+@Service
+public class JwtService {
+
+    @Value("${jwt.secret}")
+    private String secretKey;
+
+    public String extractUsername(String token) {
+        return extractClaim(token, Claims::getSubject);
+    }
+
+    public <T> T extractClaim(String token, Function<Claims, T> resolver) {
+        final Claims claims = extractAllClaims(token);
+        return resolver.apply(claims);
+    }
+
+    public boolean isTokenValid(String token) {
+        try {
+            extractAllClaims(token);
+            return !extractAllClaims(token).getExpiration().before(new java.util.Date());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private Claims extractAllClaims(String token) {
+        return Jwts
+                .parserBuilder()
+                .setSigningKey(getSignInKey())
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+    }
+
+    private Key getSignInKey() {
+        return Keys.hmacShaKeyFor(secretKey.getBytes());
+    }
+    public String extractRole(String token) {
+        return extractAllClaims(token).get("role", String.class);
+    }
+    public Long extractUserId(String token) {
+        Object userId = extractAllClaims(token).get("userId");
+
+        if (userId instanceof Integer) return ((Integer) userId).longValue();
+        if (userId instanceof Long) return (Long) userId;
+        if (userId instanceof String) return Long.parseLong((String) userId);
+
+        return null;
+    }
+}
