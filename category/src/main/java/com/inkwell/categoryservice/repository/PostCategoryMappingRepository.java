@@ -11,5 +11,6 @@ public interface PostCategoryMappingRepository extends JpaRepository<PostCategor
     List<PostCategoryMapping> findByCategoryId(Long categoryId);
     Optional<PostCategoryMapping> findByPostIdAndCategoryId(Long postId, Long categoryId);
     void deleteByPostIdAndCategoryId(Long postId, Long categoryId);
+    void deleteByPostId(Long postId);
     long countByCategoryId(Long categoryId);
 }

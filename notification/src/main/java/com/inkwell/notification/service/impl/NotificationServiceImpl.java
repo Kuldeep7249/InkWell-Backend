@@ -2,6 +2,7 @@ package com.inkwell.notification.service.impl;
 
 import com.inkwell.notification.dto.*;
 import com.inkwell.notification.entity.Notification;
+import com.inkwell.notification.exception.NotificationDeliveryException;
 import com.inkwell.notification.exception.ResourceNotFoundException;
 import com.inkwell.notification.exception.UnauthorizedActionException;
 import com.inkwell.notification.repository.NotificationRepository;
@@ -9,8 +10,10 @@ import com.inkwell.notification.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
+import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +26,12 @@ public class NotificationServiceImpl implements NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final JavaMailSender mailSender;
+
+    @Value("${spring.mail.username:}")
+    private String mailUsername;
+
+    @Value("${spring.mail.password:}")
+    private String mailPassword;
 
     @Override
     @Transactional
@@ -129,11 +138,18 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void sendEmail(EmailNotificationRequest request) {
+        validateMailConfiguration();
+
         SimpleMailMessage email = new SimpleMailMessage();
+        email.setFrom(mailUsername);
         email.setTo(request.getTo());
         email.setSubject(request.getSubject());
         email.setText(request.getBody());
-        mailSender.send(email);
+        try {
+            mailSender.send(email);
+        } catch (MailException ex) {
+            throw new NotificationDeliveryException("Email delivery failed: " + resolveMailErrorMessage(ex));
+        }
     }
 
     @Override
@@ -174,5 +190,25 @@ public class NotificationServiceImpl implements NotificationService {
                 .isRead(notification.getIsRead())
                 .createdAt(notification.getCreatedAt())
                 .build();
+    }
+
+    private void validateMailConfiguration() {
+        if (mailUsername == null || mailUsername.isBlank()
+                || mailPassword == null || mailPassword.isBlank()
+                || "your_email@gmail.com".equalsIgnoreCase(mailUsername)
+                || "your_app_password".equals(mailPassword)) {
+            throw new NotificationDeliveryException("Email service is not configured. Set real spring.mail.username and spring.mail.password values.");
+        }
+    }
+
+    private String resolveMailErrorMessage(MailException ex) {
+        Throwable cause = ex.getMostSpecificCause();
+        if (cause != null && cause.getMessage() != null && !cause.getMessage().isBlank()) {
+            return cause.getMessage();
+        }
+        if (ex.getMessage() != null && !ex.getMessage().isBlank()) {
+            return ex.getMessage();
+        }
+        return "Unknown mail server error";
     }
 }

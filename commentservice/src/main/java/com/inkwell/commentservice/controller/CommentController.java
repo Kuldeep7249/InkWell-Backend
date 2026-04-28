@@ -9,6 +9,7 @@ import com.inkwell.commentservice.service.CommentService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,9 +30,10 @@ public class CommentController {
     @PreAuthorize("hasAnyRole('READER','AUTHOR','ADMIN')")
     public ResponseEntity<CommentResponse> addComment(@PathVariable Long postId,
                                                       @Valid @RequestBody CommentRequest request,
+                                                      @RequestHeader(HttpHeaders.AUTHORIZATION) String authorizationHeader,
                                                       Authentication authentication) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(commentService.addComment(postId, request, getPrincipal(authentication)));
+                .body(commentService.addComment(postId, request, getPrincipal(authentication), authorizationHeader));
     }
 
     @GetMapping("/posts/{postId}")
@@ -85,8 +87,9 @@ public class CommentController {
     @PostMapping("/{commentId}/like")
     @PreAuthorize("hasAnyRole('READER','AUTHOR','ADMIN')")
     public ResponseEntity<ApiResponse> like(@PathVariable Long commentId,
+                                            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorizationHeader,
                                             Authentication authentication) {
-        commentService.likeComment(commentId, getPrincipal(authentication));
+        commentService.likeComment(commentId, getPrincipal(authentication), authorizationHeader);
         return ResponseEntity.ok(ApiResponse.builder().success(true).message("Comment liked successfully").build());
     }
 

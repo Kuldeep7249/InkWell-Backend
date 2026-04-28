@@ -2,18 +2,19 @@ package com.inkwell.postservice.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.security.Key;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.function.Function;
 
 @Service
 public class JwtService {
 
-    @Value("${jwt.secret}")
+    @Value("${app.jwt.secret}")
     private String secretKey;
 
     public String extractUsername(String token) {
@@ -44,11 +45,29 @@ public class JwtService {
     }
 
     private Key getSignInKey() {
-        return Keys.hmacShaKeyFor(secretKey.getBytes());
+        return Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
     }
+
     public String extractRole(String token) {
-        return extractAllClaims(token).get("role", String.class);
+        Claims claims = extractAllClaims(token);
+        String role = claims.get("role", String.class);
+
+        if (role != null) {
+            return normalizeRole(role);
+        }
+
+        List<?> roles = claims.get("roles", List.class);
+        if (roles == null || roles.isEmpty()) {
+            return null;
+        }
+
+        return normalizeRole(String.valueOf(roles.get(0)));
     }
+
+    private String normalizeRole(String role) {
+        return role.startsWith("ROLE_") ? role.substring(5) : role;
+    }
+
     public Long extractUserId(String token) {
         Object userId = extractAllClaims(token).get("userId");
 

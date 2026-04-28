@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/notifications")
+@RequestMapping({"/api/notifications", "/notification-api"})
 @RequiredArgsConstructor
 @Tag(name = "Notification APIs", description = "Manage in-app and email notifications")
 public class NotificationController {
@@ -55,6 +55,18 @@ public class NotificationController {
                 .build());
     }
 
+    @GetMapping("/me")
+    @Operation(summary = "Get notifications for the authenticated user")
+    public ResponseEntity<ApiResponse<List<NotificationResponse>>> getMine(
+            @RequestParam(required = false) Boolean unreadOnly,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.<List<NotificationResponse>>builder()
+                .success(true)
+                .message("Notifications fetched successfully")
+                .data(notificationService.getByRecipient(principal.getUserId(), unreadOnly, principal.getUserId(), false))
+                .build());
+    }
+
     @PutMapping("/{notificationId}/read")
     @Operation(summary = "Mark a notification as read")
     public ResponseEntity<ApiResponse<NotificationResponse>> markAsRead(
@@ -78,6 +90,13 @@ public class NotificationController {
         return ResponseEntity.ok(ApiResponse.builder().success(true).message("All notifications marked as read").data(null).build());
     }
 
+    @PutMapping("/me/read-all")
+    @Operation(summary = "Mark all authenticated user notifications as read")
+    public ResponseEntity<ApiResponse<Object>> markMineRead(@AuthenticationPrincipal UserPrincipal principal) {
+        notificationService.markAllRead(principal.getUserId(), principal.getUserId(), false);
+        return ResponseEntity.ok(ApiResponse.builder().success(true).message("All notifications marked as read").data(null).build());
+    }
+
     @DeleteMapping("/recipient/{recipientId}/read")
     @Operation(summary = "Delete all read notifications for a recipient")
     public ResponseEntity<ApiResponse<Object>> deleteRead(
@@ -85,6 +104,13 @@ public class NotificationController {
             @AuthenticationPrincipal UserPrincipal principal) {
         boolean isAdmin = principal.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
         notificationService.deleteRead(recipientId, principal.getUserId(), isAdmin);
+        return ResponseEntity.ok(ApiResponse.builder().success(true).message("Read notifications deleted successfully").data(null).build());
+    }
+
+    @DeleteMapping("/me/read")
+    @Operation(summary = "Delete all read notifications for the authenticated user")
+    public ResponseEntity<ApiResponse<Object>> deleteMineRead(@AuthenticationPrincipal UserPrincipal principal) {
+        notificationService.deleteRead(principal.getUserId(), principal.getUserId(), false);
         return ResponseEntity.ok(ApiResponse.builder().success(true).message("Read notifications deleted successfully").data(null).build());
     }
 
@@ -98,6 +124,16 @@ public class NotificationController {
                 .success(true)
                 .message("Unread count fetched successfully")
                 .data(notificationService.getUnreadCount(recipientId, principal.getUserId(), isAdmin))
+                .build());
+    }
+
+    @GetMapping("/me/unread-count")
+    @Operation(summary = "Get unread notification count for the authenticated user")
+    public ResponseEntity<ApiResponse<UnreadCountResponse>> getMyUnreadCount(@AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.<UnreadCountResponse>builder()
+                .success(true)
+                .message("Unread count fetched successfully")
+                .data(notificationService.getUnreadCount(principal.getUserId(), principal.getUserId(), false))
                 .build());
     }
 

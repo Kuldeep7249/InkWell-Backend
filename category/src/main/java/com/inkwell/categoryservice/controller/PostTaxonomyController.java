@@ -75,4 +75,14 @@ public class PostTaxonomyController {
                 .data(postTaxonomyService.getTagsByPost(postId))
                 .build());
     }
+
+    @Operation(summary = "Remove all taxonomy mappings for a post (AUTHOR/ADMIN)")
+    @DeleteMapping("/api/posts/{postId}/taxonomy")
+    public ResponseEntity<ApiResponse<Object>> clearPostTaxonomy(@PathVariable Long postId) {
+        postTaxonomyService.clearPostTaxonomy(postId);
+        return ResponseEntity.ok(ApiResponse.builder()
+                .success(true)
+                .message("Post taxonomy cleared successfully")
+                .build());
+    }
 }

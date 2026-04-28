@@ -39,10 +39,11 @@ public class SecurityConfig {
                                 "/actuator/health"
                         ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories/**", "/api/tags/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/post-categories/**", "/api/post-tags/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/categories/**", "/api/tags/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/categories/**", "/api/tags/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/categories/**", "/api/tags/**").hasRole("ADMIN")
-                        .requestMatchers("/api/post-categories/**", "/api/post-tags/**").hasAnyRole("AUTHOR", "ADMIN")
+                        .requestMatchers("/api/post-categories/**", "/api/post-tags/**", "/api/posts/*/taxonomy").hasAnyRole("AUTHOR", "ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

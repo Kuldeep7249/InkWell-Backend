@@ -13,4 +13,5 @@ public interface PostTaxonomyService {
     void addTagToPost(Long postId, Long tagId);
     void removeTagFromPost(Long postId, Long tagId);
     List<TagResponse> getTagsByPost(Long postId);
+    void clearPostTaxonomy(Long postId);
 }

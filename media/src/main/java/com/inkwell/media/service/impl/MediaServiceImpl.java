@@ -1,5 +1,6 @@
 package com.inkwell.media.service.impl;
 
+import com.inkwell.media.client.PostServiceClient;
 import com.inkwell.media.dto.MediaResponse;
 import com.inkwell.media.entity.Media;
 import com.inkwell.media.exception.AccessDeniedException;
@@ -9,6 +10,7 @@ import com.inkwell.media.repository.MediaRepository;
 import com.inkwell.media.service.FileStorageService;
 import com.inkwell.media.service.MediaService;
 import com.inkwell.media.util.MediaMapper;
+import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,10 +32,15 @@ public class MediaServiceImpl implements MediaService {
 
     private final MediaRepository mediaRepository;
     private final FileStorageService fileStorageService;
+    private final PostServiceClient postServiceClient;
 
     @Override
-    public MediaResponse uploadMedia(MultipartFile file, String altText, Long linkedPostId, Long requesterId, boolean isAdmin) {
+    public MediaResponse uploadMedia(MultipartFile file, String altText, Long linkedPostId, Long requesterId, boolean isAdmin, String authorizationHeader) {
         validateUpload(file);
+        if (linkedPostId != null) {
+            ensurePostAccessible(linkedPostId, authorizationHeader);
+        }
+
         String extension = extractExtension(file.getOriginalFilename());
         String generatedFilename = UUID.randomUUID() + (extension.isBlank() ? "" : "." + extension);
         String url = fileStorageService.store(file, generatedFilename);
@@ -74,6 +81,8 @@ public class MediaServiceImpl implements MediaService {
     @Override
     @Transactional(readOnly = true)
     public List<MediaResponse> getMediaByPost(Long postId) {
+        ensurePublicPostExists(postId);
+
         return mediaRepository.findByLinkedPostIdAndIsDeletedFalseOrderByUploadedAtDesc(postId)
                 .stream().map(MediaMapper::toResponse).toList();
     }
@@ -98,7 +107,9 @@ public class MediaServiceImpl implements MediaService {
     }
 
     @Override
-    public MediaResponse linkToPost(Long mediaId, Long postId, Long requesterId, boolean isAdmin) {
+    public MediaResponse linkToPost(Long mediaId, Long postId, Long requesterId, boolean isAdmin, String authorizationHeader) {
+        ensurePostAccessible(postId, authorizationHeader);
+
         Media media = getActiveMedia(mediaId);
         authorizeOwnership(media, requesterId, isAdmin);
         media.setLinkedPostId(postId);
@@ -144,6 +155,24 @@ public class MediaServiceImpl implements MediaService {
     private Media getActiveMedia(Long mediaId) {
         return mediaRepository.findByMediaIdAndIsDeletedFalse(mediaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Media not found with id: " + mediaId));
+    }
+
+    private void ensurePublicPostExists(Long postId) {
+        try {
+            postServiceClient.getPublicPost(postId);
+        } catch (FeignException.NotFound ex) {
+            throw new ResourceNotFoundException("Post not found with id: " + postId);
+        }
+    }
+
+    private void ensurePostAccessible(Long postId, String authorizationHeader) {
+        try {
+            postServiceClient.getAccessiblePost(postId, authorizationHeader);
+        } catch (FeignException.NotFound ex) {
+            throw new ResourceNotFoundException("Post not found with id: " + postId);
+        } catch (FeignException.Forbidden ex) {
+            throw new AccessDeniedException("You are not allowed to link media to this post");
+        }
     }
 
     private void authorizeOwnership(Media media, Long requesterId, boolean isAdmin) {

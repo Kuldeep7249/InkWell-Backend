@@ -1,17 +1,24 @@
 package com.inkwell.commentservice.service;
 
+import com.inkwell.commentservice.client.PostServiceClient;
 import com.inkwell.commentservice.dto.CommentRequest;
 import com.inkwell.commentservice.dto.CommentResponse;
 import com.inkwell.commentservice.dto.CommentUpdateRequest;
+import com.inkwell.commentservice.dto.NotificationType;
+import com.inkwell.commentservice.dto.PostResponse;
+import com.inkwell.commentservice.dto.RelatedType;
+import com.inkwell.commentservice.dto.SendNotificationRequest;
 import com.inkwell.commentservice.entity.Comment;
 import com.inkwell.commentservice.entity.CommentLike;
 import com.inkwell.commentservice.entity.CommentStatus;
 import com.inkwell.commentservice.exception.BadRequestException;
 import com.inkwell.commentservice.exception.ForbiddenOperationException;
 import com.inkwell.commentservice.exception.ResourceNotFoundException;
+import com.inkwell.commentservice.messaging.NotificationEventPublisher;
 import com.inkwell.commentservice.repository.CommentLikeRepository;
 import com.inkwell.commentservice.repository.CommentRepository;
 import com.inkwell.commentservice.security.UserPrincipal;
+import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,11 +32,16 @@ public class CommentServiceImpl implements CommentService {
 
     private final CommentRepository commentRepository;
     private final CommentLikeRepository commentLikeRepository;
+    private final PostServiceClient postServiceClient;
+    private final NotificationEventPublisher notificationEventPublisher;
 
     @Override
-    public CommentResponse addComment(Long postId, CommentRequest request, UserPrincipal currentUser) {
+    public CommentResponse addComment(Long postId, CommentRequest request, UserPrincipal currentUser, String authorizationHeader) {
+        PostResponse post = ensurePublicPostExists(postId);
+
+        Comment parent = null;
         if (request.getParentCommentId() != null) {
-            Comment parent = findExistingComment(request.getParentCommentId());
+            parent = findExistingComment(request.getParentCommentId());
             if (!parent.getPostId().equals(postId)) {
                 throw new BadRequestException("Reply must belong to the same post");
             }
@@ -48,12 +60,16 @@ public class CommentServiceImpl implements CommentService {
                 .status(CommentStatus.APPROVED)
                 .build();
 
-        return mapToResponse(commentRepository.save(comment));
+        Comment savedComment = commentRepository.save(comment);
+        sendCommentNotification(savedComment, post, parent, currentUser);
+        return mapToResponse(savedComment);
     }
 
     @Transactional(readOnly = true)
     @Override
     public List<CommentResponse> getCommentsByPost(Long postId, boolean includePendingForModerator) {
+        ensurePublicPostExists(postId);
+
         List<Comment> comments = includePendingForModerator
                 ? commentRepository.findByPostId(postId)
                 : commentRepository.findByPostIdAndStatus(postId, CommentStatus.APPROVED);
@@ -114,7 +130,7 @@ public class CommentServiceImpl implements CommentService {
     }
 
     @Override
-    public void likeComment(Long commentId, UserPrincipal currentUser) {
+    public void likeComment(Long commentId, UserPrincipal currentUser, String authorizationHeader) {
         Comment comment = findExistingComment(commentId);
         if (comment.getStatus() != CommentStatus.APPROVED) {
             throw new BadRequestException("Only approved comments can be liked");
@@ -130,6 +146,7 @@ public class CommentServiceImpl implements CommentService {
 
         comment.setLikesCount(comment.getLikesCount() + 1);
         commentRepository.save(comment);
+        sendLikeNotification(comment, currentUser);
     }
 
     @Override
@@ -146,9 +163,19 @@ public class CommentServiceImpl implements CommentService {
     @Transactional(readOnly = true)
     @Override
     public long getCommentCount(Long postId, boolean includePendingForModerator) {
+        ensurePublicPostExists(postId);
+
         return includePendingForModerator
                 ? commentRepository.countByPostId(postId)
                 : commentRepository.countByPostIdAndStatus(postId, CommentStatus.APPROVED);
+    }
+
+    private PostResponse ensurePublicPostExists(Long postId) {
+        try {
+            return postServiceClient.getPublicPost(postId);
+        } catch (FeignException.NotFound ex) {
+            throw new ResourceNotFoundException("Post not found with id: " + postId);
+        }
     }
 
     private Comment findExistingComment(Long commentId) {
@@ -183,5 +210,57 @@ public class CommentServiceImpl implements CommentService {
                 .createdAt(comment.getCreatedAt())
                 .updatedAt(comment.getUpdatedAt())
                 .build();
+    }
+
+    private void sendCommentNotification(Comment comment, PostResponse post, Comment parent, UserPrincipal currentUser) {
+        if (parent != null) {
+            if (!parent.getAuthorId().equals(currentUser.getUserId())) {
+                sendNotification(SendNotificationRequest.builder()
+                        .recipientId(parent.getAuthorId())
+                        .actorId(currentUser.getUserId())
+                        .type(NotificationType.COMMENT_REPLY)
+                        .title("New reply to your comment")
+                        .message(currentUser.getUsername() + " replied to your comment.")
+                        .relatedId(comment.getCommentId())
+                        .relatedType(RelatedType.COMMENT)
+                        .sendEmail(false)
+                        .build());
+            }
+            return;
+        }
+
+        if (post.getUserId() != null && !post.getUserId().equals(currentUser.getUserId())) {
+            sendNotification(SendNotificationRequest.builder()
+                    .recipientId(post.getUserId())
+                    .actorId(currentUser.getUserId())
+                    .type(NotificationType.NEW_COMMENT)
+                    .title("New comment on your post")
+                    .message(currentUser.getUsername() + " commented on your post.")
+                    .relatedId(post.getId())
+                    .relatedType(RelatedType.POST)
+                    .sendEmail(false)
+                    .build());
+        }
+    }
+
+    private void sendLikeNotification(Comment comment, UserPrincipal currentUser) {
+        if (comment.getAuthorId().equals(currentUser.getUserId())) {
+            return;
+        }
+
+        sendNotification(SendNotificationRequest.builder()
+                .recipientId(comment.getAuthorId())
+                .actorId(currentUser.getUserId())
+                .type(NotificationType.LIKE)
+                .title("Your comment got a like")
+                .message(currentUser.getUsername() + " liked your comment.")
+                .relatedId(comment.getCommentId())
+                .relatedType(RelatedType.COMMENT)
+                .sendEmail(false)
+                .build());
+    }
+
+    private void sendNotification(SendNotificationRequest request) {
+        notificationEventPublisher.publish(request);
     }
 }

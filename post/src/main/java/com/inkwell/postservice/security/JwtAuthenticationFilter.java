@@ -1,10 +1,13 @@
 package com.inkwell.postservice.security;
 
+import com.inkwell.postservice.client.AuthServiceClient;
+import com.inkwell.postservice.dto.AuthProfileResponse;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -17,33 +20,31 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private final JwtService jwtService;
+    private final AuthServiceClient authServiceClient;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
 
-        String authHeader = request.getHeader("Authorization");
+        String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String jwt = authHeader.substring(7);
-
         try {
-            String username = jwtService.extractUsername(jwt);
-            Long userId = jwtService.extractUserId(jwt);
-            String role = jwtService.extractRole(jwt);
+            AuthProfileResponse profile = authServiceClient.getProfile(authHeader);
 
-            if (username != null && userId != null && role != null
-                    && SecurityContextHolder.getContext().getAuthentication() == null
-                    && jwtService.isTokenValid(jwt)) {
+            if (profile != null && profile.isActive()
+                    && profile.getUserId() != null
+                    && profile.getEmail() != null
+                    && profile.getRole() != null
+                    && SecurityContextHolder.getContext().getAuthentication() == null) {
 
                 CustomUserDetails userDetails =
-                        new CustomUserDetails(userId, username, role);
+                        new CustomUserDetails(profile.getUserId(), profile.getEmail(), normalizeRole(profile.getRole()));
 
                 UsernamePasswordAuthenticationToken authToken =
                         new UsernamePasswordAuthenticationToken(
@@ -56,13 +57,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             }
 
-        } catch (Exception e) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"message\":\"Invalid or expired token\"}");
-            return;
+        } catch (Exception ignored) {
+            SecurityContextHolder.clearContext();
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private String normalizeRole(String role) {
+        return role.startsWith("ROLE_") ? role.substring(5) : role.toUpperCase();
     }
 }

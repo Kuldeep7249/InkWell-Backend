@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -29,9 +30,10 @@ public class MediaController {
             @RequestPart("file") MultipartFile file,
             @RequestParam(value = "altText", required = false) String altText,
             @RequestParam(value = "linkedPostId", required = false) Long linkedPostId,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorizationHeader,
             @AuthenticationPrincipal UserPrincipal principal) {
 
-        MediaResponse response = mediaService.uploadMedia(file, altText, linkedPostId, principal.getUserId(), isAdmin(principal));
+        MediaResponse response = mediaService.uploadMedia(file, altText, linkedPostId, principal.getUserId(), isAdmin(principal), authorizationHeader);
         return ResponseEntity.ok(com.inkwell.media.dto.ApiResponse.<MediaResponse>builder()
                 .success(true)
                 .message("Media uploaded successfully")
@@ -113,11 +115,12 @@ public class MediaController {
     public ResponseEntity<com.inkwell.media.dto.ApiResponse<MediaResponse>> linkToPost(
             @PathVariable Long mediaId,
             @Valid @RequestBody LinkPostRequest request,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorizationHeader,
             @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.ok(com.inkwell.media.dto.ApiResponse.<MediaResponse>builder()
                 .success(true)
                 .message("Media linked to post successfully")
-                .data(mediaService.linkToPost(mediaId, request.getPostId(), principal.getUserId(), isAdmin(principal)))
+                .data(mediaService.linkToPost(mediaId, request.getPostId(), principal.getUserId(), isAdmin(principal), authorizationHeader))
                 .build());
     }
 

@@ -1,5 +1,7 @@
 package com.inkwell.media.security;
 
+import com.inkwell.media.client.AuthServiceClient;
+import com.inkwell.media.dto.AuthProfileResponse;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -13,12 +15,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private final JwtUtil jwtUtil;
+    private final AuthServiceClient authServiceClient;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -32,8 +35,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         try {
-            String token = authHeader.substring(7);
-            UserPrincipal principal = jwtUtil.buildPrincipal(token);
+            AuthProfileResponse profile = authServiceClient.getProfile(authHeader);
+            if (profile == null || !profile.isActive()
+                    || profile.getUserId() == null
+                    || profile.getUsername() == null
+                    || profile.getRole() == null) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            UserPrincipal principal = UserPrincipal.builder()
+                    .userId(profile.getUserId())
+                    .username(profile.getUsername())
+                    .roles(List.of(normalizeRole(profile.getRole())))
+                    .build();
 
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
@@ -44,5 +59,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private String normalizeRole(String role) {
+        return role.startsWith("ROLE_") ? role.substring(5) : role.toUpperCase();
     }
 }

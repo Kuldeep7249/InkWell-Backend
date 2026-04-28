@@ -26,6 +26,15 @@ public class Post {
     @Column(nullable = false, length = 5000)
     private String content;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private PostStatus status;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    @PrePersist
+    public void prePersist() {
+        if (this.status == null) this.status = PostStatus.PENDING;
+    }
 }

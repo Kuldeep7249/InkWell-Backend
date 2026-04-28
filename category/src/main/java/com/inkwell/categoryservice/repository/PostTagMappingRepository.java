@@ -11,5 +11,6 @@ public interface PostTagMappingRepository extends JpaRepository<PostTagMapping, 
     List<PostTagMapping> findByTagId(Long tagId);
     Optional<PostTagMapping> findByPostIdAndTagId(Long postId, Long tagId);
     void deleteByPostIdAndTagId(Long postId, Long tagId);
+    void deleteByPostId(Long postId);
     long countByTagId(Long tagId);
 }

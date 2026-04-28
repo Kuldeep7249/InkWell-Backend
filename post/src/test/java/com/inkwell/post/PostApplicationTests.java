@@ -1,9 +1,10 @@
 package com.inkwell.post;
 
+import com.inkwell.postservice.PostServiceApplication;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
+@SpringBootTest(classes = PostServiceApplication.class)
 class PostApplicationTests {
 
 	@Test

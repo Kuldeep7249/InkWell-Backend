@@ -111,6 +111,38 @@ public class PostTaxonomyServiceImpl implements PostTaxonomyService {
                 .toList();
     }
 
+    @Override
+    public void clearPostTaxonomy(Long postId) {
+        List<Long> categoryIds = postCategoryMappingRepository.findByPostId(postId).stream()
+                .map(PostCategoryMapping::getCategoryId)
+                .distinct()
+                .toList();
+        List<Long> tagIds = postTagMappingRepository.findByPostId(postId).stream()
+                .map(PostTagMapping::getTagId)
+                .distinct()
+                .toList();
+
+        postCategoryMappingRepository.deleteByPostId(postId);
+        postTagMappingRepository.deleteByPostId(postId);
+
+        categoryIds.forEach(this::refreshCategoryPostCount);
+        tagIds.forEach(this::refreshTagPostCount);
+    }
+
+    private void refreshCategoryPostCount(Long categoryId) {
+        categoryRepository.findById(categoryId).ifPresent(category -> {
+            category.setPostCount(postCategoryMappingRepository.countByCategoryId(categoryId));
+            categoryRepository.save(category);
+        });
+    }
+
+    private void refreshTagPostCount(Long tagId) {
+        tagRepository.findById(tagId).ifPresent(tag -> {
+            tag.setPostCount(postTagMappingRepository.countByTagId(tagId));
+            tagRepository.save(tag);
+        });
+    }
+
     private CategoryResponse mapCategory(Category category) {
         return CategoryResponse.builder()
                 .id(category.getId())

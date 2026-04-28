@@ -8,7 +8,7 @@ import com.inkwell.commentservice.security.UserPrincipal;
 import java.util.List;
 
 public interface CommentService {
-    CommentResponse addComment(Long postId, CommentRequest request, UserPrincipal currentUser);
+    CommentResponse addComment(Long postId, CommentRequest request, UserPrincipal currentUser, String authorizationHeader);
     List<CommentResponse> getCommentsByPost(Long postId, boolean includePendingForModerator);
     CommentResponse getCommentById(Long commentId, boolean includePendingForModerator);
     List<CommentResponse> getReplies(Long commentId, boolean includePendingForModerator);
@@ -16,7 +16,7 @@ public interface CommentService {
     void deleteComment(Long commentId, UserPrincipal currentUser);
     void approveComment(Long commentId);
     void rejectComment(Long commentId);
-    void likeComment(Long commentId, UserPrincipal currentUser);
+    void likeComment(Long commentId, UserPrincipal currentUser, String authorizationHeader);
     void unlikeComment(Long commentId, UserPrincipal currentUser);
     long getCommentCount(Long postId, boolean includePendingForModerator);
 }
