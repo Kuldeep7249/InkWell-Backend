@@ -39,6 +39,17 @@ services:
   notification:
     url: http://localhost:8087
 
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    hostname: localhost
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}
+
 springdoc:
   api-docs:
     path: /v3/api-docs
