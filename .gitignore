@@ -1,0 +1,5 @@
+target/
+.scannerwork/
+.sonar/
+.sonartmp/
+sonar-scanner.log
