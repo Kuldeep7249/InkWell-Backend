@@ -21,16 +21,20 @@ import feign.FeignException;
 import com.inkwell.postservice.repository.PostRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class PostServiceImpl implements PostService {
 
     private final PostRepository postRepository;
@@ -41,7 +45,10 @@ public class PostServiceImpl implements PostService {
     public PostResponse createPost(PostRequest request, Long userId, String authorizationHeader) {
         Post post = Post.builder()
                 .title(request.getTitle())
-                .content(request.getContent())
+                .content(request.getResolvedContent())
+                .featuredImageUrl(request.getFeaturedImageUrl())
+                .mediaUrls(normalizeStrings(request.getMediaUrls()))
+                .mediaIds(normalizeIdsAsList(request.getMediaIds()))
                 .userId(userId)
                 .status(PostStatus.PENDING)
                 .createdAt(LocalDateTime.now())
@@ -49,7 +56,7 @@ public class PostServiceImpl implements PostService {
                 .build();
 
         Post savedPost = postRepository.save(post);
-        syncTaxonomy(savedPost.getId(), request.getCategoryIds(), request.getTagIds(), authorizationHeader);
+        syncTaxonomy(savedPost.getId(), request.getResolvedCategoryIds(), resolveTagIds(request.getTagIds(), request.getTagNames()), authorizationHeader);
         return mapToResponse(savedPost);
     }
 
@@ -119,11 +126,14 @@ public class PostServiceImpl implements PostService {
         }
 
         post.setTitle(request.getTitle());
-        post.setContent(request.getContent());
+        post.setContent(request.getResolvedContent());
+        post.setFeaturedImageUrl(request.getFeaturedImageUrl());
+        post.setMediaUrls(normalizeStrings(request.getMediaUrls()));
+        post.setMediaIds(normalizeIdsAsList(request.getMediaIds()));
         post.setUpdatedAt(LocalDateTime.now());
 
         Post updatedPost = postRepository.save(post);
-        syncTaxonomy(updatedPost.getId(), request.getCategoryIds(), request.getTagIds(), authorizationHeader);
+        syncTaxonomy(updatedPost.getId(), request.getResolvedCategoryIds(), resolveTagIds(request.getTagIds(), request.getTagNames()), authorizationHeader);
         return mapToResponse(updatedPost);
     }
 
@@ -165,6 +175,10 @@ public class PostServiceImpl implements PostService {
                 .userId(post.getUserId())
                 .title(post.getTitle())
                 .content(post.getContent())
+                .description(post.getContent())
+                .featuredImageUrl(post.getFeaturedImageUrl())
+                .mediaUrls(copyList(post.getMediaUrls()))
+                .mediaIds(copyList(post.getMediaIds()))
                 .status(post.getStatus())
                 .categories(categories)
                 .tags(tags)
@@ -253,6 +267,57 @@ public class PostServiceImpl implements PostService {
         return ids.stream()
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private List<Long> normalizeIdsAsList(List<Long> ids) {
+        return new ArrayList<>(normalizeIds(ids));
+    }
+
+    private <T> List<T> copyList(List<T> values) {
+        return values == null ? new ArrayList<>() : new ArrayList<>(values);
+    }
+
+    private List<String> normalizeStrings(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        return values.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    private List<Long> resolveTagIds(List<Long> tagIds, List<String> tagNames) {
+        Set<Long> resolvedIds = normalizeIds(tagIds);
+        List<String> normalizedNames = normalizeStrings(tagNames);
+
+        if (normalizedNames.isEmpty()) {
+            return new ArrayList<>(resolvedIds);
+        }
+
+        Set<String> requestedNames = normalizedNames.stream()
+                .map(String::toLowerCase)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        fetchAllTags().stream()
+                .filter(tag -> tag.getName() != null && requestedNames.contains(tag.getName().trim().toLowerCase()))
+                .map(TagResponse::getId)
+                .filter(Objects::nonNull)
+                .forEach(resolvedIds::add);
+
+        return new ArrayList<>(resolvedIds);
+    }
+
+    private List<TagResponse> fetchAllTags() {
+        try {
+            ServiceApiResponse<List<TagResponse>> response = categoryServiceClient.getAllTags();
+            return response != null && response.getData() != null ? response.getData() : Collections.emptyList();
+        } catch (FeignException ignored) {
+            return Collections.emptyList();
+        }
     }
 
     private void sendPostStatusNotification(Post post, Long actorId) {

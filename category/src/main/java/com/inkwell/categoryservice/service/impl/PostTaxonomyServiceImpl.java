@@ -6,7 +6,6 @@ import com.inkwell.categoryservice.entity.Category;
 import com.inkwell.categoryservice.entity.PostCategoryMapping;
 import com.inkwell.categoryservice.entity.PostTagMapping;
 import com.inkwell.categoryservice.entity.Tag;
-import com.inkwell.categoryservice.exception.BadRequestException;
 import com.inkwell.categoryservice.exception.ResourceNotFoundException;
 import com.inkwell.categoryservice.repository.CategoryRepository;
 import com.inkwell.categoryservice.repository.PostCategoryMappingRepository;
@@ -35,7 +34,7 @@ public class PostTaxonomyServiceImpl implements PostTaxonomyService {
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + categoryId));
 
         if (postCategoryMappingRepository.findByPostIdAndCategoryId(postId, categoryId).isPresent()) {
-            throw new BadRequestException("Category already assigned to this post");
+            return;
         }
 
         postCategoryMappingRepository.save(PostCategoryMapping.builder()
@@ -76,7 +75,7 @@ public class PostTaxonomyServiceImpl implements PostTaxonomyService {
                 .orElseThrow(() -> new ResourceNotFoundException("Tag not found with id: " + tagId));
 
         if (postTagMappingRepository.findByPostIdAndTagId(postId, tagId).isPresent()) {
-            throw new BadRequestException("Tag already assigned to this post");
+            return;
         }
 
         postTagMappingRepository.save(PostTagMapping.builder()

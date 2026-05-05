@@ -8,10 +8,14 @@ spring:
     gateway:
       server:
         webflux:
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
           globalcors:
+            add-to-simple-url-handler-mapping: true
             cors-configurations:
               '[/**]':
-                allowed-origins: "*"
+                allowed-origins:
+                  - http://localhost:5173
                 allowed-methods:
                   - GET
                   - POST
@@ -20,6 +24,9 @@ spring:
                   - DELETE
                   - OPTIONS
                 allowed-headers: "*"
+                exposed-headers: "*"
+                allow-credentials: true
+                max-age: 3600
           routes:
             - id: auth-service
               uri: http://localhost:8080
@@ -42,19 +49,26 @@ spring:
                 - Path=/api/comments/**
 
             - id: category-service
-              uri: http://localhost:8084
+              uri: http://localhost:8081
               predicates:
                 - Path=/api/categories/**,/api/tags/**,/api/post-categories/**,/api/post-tags/**
+              filters:
+                - RewritePath=/api/categories/api/categories/?(?<segment>.*), /api/categories/$\{segment}
+                - RewritePath=/api/categories/api/tags/?(?<segment>.*), /api/tags/$\{segment}
 
             - id: media-service
               uri: http://localhost:8085
               predicates:
                 - Path=/api/media/**,/files/**
+              filters:
+                - RewritePath=/api/media/api/media/?(?<segment>.*), /api/media/$\{segment}
 
             - id: notification-service
               uri: http://localhost:8087
               predicates:
                 - Path=/api/notifications/**,/notification-api/**
+              filters:
+                - RewritePath=/api/notifications/api/notifications/?(?<segment>.*), /api/notifications/$\{segment}
 
 management:
   endpoints:
