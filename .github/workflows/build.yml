@@ -22,7 +22,7 @@ jobs:
           cache: maven
 
       - name: Build and analyze auth-service
-        working-directory: auth-service
+        working-directory: auth
         run: |
           mvn -B clean verify sonar:sonar \
             -Dsonar.projectKey=Kuldeep7249_InkWell-Auth-Service \
