@@ -1,0 +1,42 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:auth_test;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+  cloud:
+    discovery:
+      enabled: false
+    config:
+      enabled: false
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: test-google-client-id
+            client-secret: test-google-client-secret
+          github:
+            client-id: test-github-client-id
+            client-secret: test-github-client-secret
+
+app:
+  jwt:
+    secret: test-secret-key-test-secret-key-123456
+    access-expiration-ms: 900000
+  oauth2:
+    authorized-redirect-uri: http://localhost:5173/oauth2/redirect
+
+eureka:
+  client:
+    enabled: false
