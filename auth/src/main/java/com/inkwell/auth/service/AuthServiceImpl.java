@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -94,6 +95,25 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    public AuthResponse oauth2Login(String registrationId, Map<String, Object> attributes) {
+        AuthProvider provider = resolveProvider(registrationId);
+        String email = extractEmail(provider, attributes);
+        String username = extractUsername(provider, attributes, email);
+        String fullName = extractFullName(provider, attributes, username);
+        String avatarUrl = extractAvatarUrl(provider, attributes);
+
+        User user = userRepository.findByEmail(email)
+                .map(existingUser -> updateOAuth2User(existingUser, provider, fullName, avatarUrl))
+                .orElseGet(() -> createOAuth2User(email, username, fullName, avatarUrl, provider));
+
+        if (!user.isActive()) {
+            throw new UnauthorizedException("Account is deactivated");
+        }
+
+        return buildAuthResponse(user, "OAuth2 login successful");
+    }
+
+    @Override
     public void logout(String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) {
             return;
@@ -159,6 +179,93 @@ public class AuthServiceImpl implements AuthService {
         user.setActive(false);
         userRepository.save(user);
         refreshTokenRepository.deleteByUser(user);
+    }
+
+    private User createOAuth2User(String email, String username, String fullName, String avatarUrl, AuthProvider provider) {
+        User user = User.builder()
+                .username(generateUniqueUsername(username))
+                .email(email)
+                .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
+                .fullName(fullName)
+                .role(Role.READER)
+                .avatarUrl(avatarUrl)
+                .provider(provider)
+                .isActive(true)
+                .build();
+
+        return userRepository.save(user);
+    }
+
+    private User updateOAuth2User(User user, AuthProvider provider, String fullName, String avatarUrl) {
+        if (user.getProvider() != provider) {
+            user.setProvider(provider);
+        }
+        if (fullName != null && !fullName.isBlank()) {
+            user.setFullName(fullName);
+        }
+        if (avatarUrl != null && !avatarUrl.isBlank()) {
+            user.setAvatarUrl(avatarUrl);
+        }
+        return userRepository.save(user);
+    }
+
+    private AuthProvider resolveProvider(String registrationId) {
+        try {
+            return AuthProvider.valueOf(registrationId.toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new UnauthorizedException("Unsupported OAuth2 provider");
+        }
+    }
+
+    private String extractEmail(AuthProvider provider, Map<String, Object> attributes) {
+        Object email = attributes.get("email");
+        if (email == null || email.toString().isBlank()) {
+            throw new UnauthorizedException(provider.name() + " account does not expose an email address");
+        }
+        return email.toString().trim().toLowerCase();
+    }
+
+    private String extractUsername(AuthProvider provider, Map<String, Object> attributes, String email) {
+        Object username = provider == AuthProvider.GITHUB ? attributes.get("login") : attributes.get("name");
+        if (username == null || username.toString().isBlank()) {
+            username = email.substring(0, email.indexOf("@"));
+        }
+        return username.toString().trim().toLowerCase().replaceAll("[^a-z0-9._-]", "");
+    }
+
+    private String extractFullName(AuthProvider provider, Map<String, Object> attributes, String fallbackUsername) {
+        Object fullName = provider == AuthProvider.GITHUB ? attributes.get("name") : attributes.get("name");
+        if (fullName == null || fullName.toString().isBlank()) {
+            return fallbackUsername;
+        }
+        return fullName.toString().trim();
+    }
+
+    private String extractAvatarUrl(AuthProvider provider, Map<String, Object> attributes) {
+        Object avatarUrl = provider == AuthProvider.GITHUB ? attributes.get("avatar_url") : attributes.get("picture");
+        return avatarUrl == null ? null : avatarUrl.toString();
+    }
+
+    private String generateUniqueUsername(String baseUsername) {
+        String sanitized = baseUsername;
+        if (sanitized == null || sanitized.isBlank()) {
+            sanitized = "user";
+        }
+        if (sanitized.length() > 40) {
+            sanitized = sanitized.substring(0, 40);
+        }
+
+        String candidate = sanitized;
+        int suffix = 1;
+        while (userRepository.existsByUsername(candidate)) {
+            String suffixText = "-" + suffix++;
+            int maxBaseLength = 50 - suffixText.length();
+            String truncatedBase = sanitized.length() > maxBaseLength
+                    ? sanitized.substring(0, maxBaseLength)
+                    : sanitized;
+            candidate = truncatedBase + suffixText;
+        }
+        return candidate;
     }
 
     private AuthResponse buildAuthResponse(User user, String message) {

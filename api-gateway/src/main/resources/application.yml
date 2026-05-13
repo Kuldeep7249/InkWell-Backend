@@ -28,10 +28,17 @@ spring:
                 allow-credentials: true
                 max-age: 3600
           routes:
+            - id: auth-oauth-prefixed
+              uri: http://localhost:8080
+              predicates:
+                - Path=/api/auth/oauth2/**,/api/auth/login/oauth2/**
+              filters:
+                - RewritePath=/api/auth/(?<segment>.*), /$\{segment}
+
             - id: auth-service
               uri: http://localhost:8080
               predicates:
-                - Path=/api/auth/**
+                - Path=/api/auth/**,/oauth2/**,/login/oauth2/**
 
             - id: category-taxonomy-by-post
               uri: http://localhost:8084

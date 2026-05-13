@@ -10,6 +10,8 @@ public interface AuthService {
 
     AuthResponse refreshToken(RefreshTokenRequest request);
 
+    AuthResponse oauth2Login(String registrationId, java.util.Map<String, Object> attributes);
+
     void logout(String refreshToken);
 
     ProfileResponse getProfile(String email);
