@@ -30,6 +30,6 @@ jobs:
         run: |
           mvn -B clean verify sonar:sonar \
             -Dsonar.projectKey=Kuldeep7249_InkWell-Auth-Service \
-            -Dsonar.organization=Kuldeep7249 \
+            -Dsonar.organization=kuldeep7249 \
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.token=$SONAR_TOKEN
