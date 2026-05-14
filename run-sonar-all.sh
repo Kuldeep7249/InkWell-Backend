@@ -2,11 +2,11 @@
 set -u
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SONAR_HOST_URL="${SONAR_HOST_URL:-http://localhost:9000}"
-MAVEN_GOALS="${MAVEN_GOALS:-verify sonar:sonar}"
+SONAR_HOST_URL="${SONAR_HOST_URL:-https://sonarcloud.io}"
+MAVEN_GOALS="${MAVEN_GOALS:-clean verify sonar:sonar}"
 
 if [[ -z "${SONAR_TOKEN:-}" ]]; then
-  echo "SONAR_TOKEN is not set. Generate a token in SonarQube and set SONAR_TOKEN before running scans."
+  echo "SONAR_TOKEN is not set. Generate a token in SonarCloud and set SONAR_TOKEN before running scans."
   exit 1
 fi
 

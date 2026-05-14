@@ -24,9 +24,9 @@
         <springdoc.version>2.8.17</springdoc.version>
         <jjwt.version>0.12.6</jjwt.version>
         <spring-cloud.version>2025.1.1</spring-cloud.version>
-        <sonar.projectKey>InkWell-API-Gateway</sonar.projectKey>
-        <sonar.login>sqp_b0aac50424911536a37501ac16d151aab9c05e04</sonar.login>
-        <sonar.host.url>http://localhost:9000</sonar.host.url>
+        <sonar.organization>kuldeep7249</sonar.organization>
+        <sonar.projectKey>Kuldeep7249_InkWell-Media-Service</sonar.projectKey>
+        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.sources>src/main/java</sonar.sources>
         <sonar.tests>src/test/java</sonar.tests>
         <sonar.java.binaries>target/classes</sonar.java.binaries>

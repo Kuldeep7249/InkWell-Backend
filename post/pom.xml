@@ -29,9 +29,9 @@
 	<properties>
 		<java.version>21</java.version>
 		<spring-cloud.version>2025.1.1</spring-cloud.version>
-		<sonar.projectKey>InkWell-API-Gateway</sonar.projectKey>
-		<sonar.login>sqp_b0aac50424911536a37501ac16d151aab9c05e04</sonar.login>
-		<sonar.host.url>http://localhost:9000</sonar.host.url>
+		<sonar.organization>kuldeep7249</sonar.organization>
+		<sonar.projectKey>Kuldeep7249_InkWell-Post-Service</sonar.projectKey>
+		<sonar.host.url>https://sonarcloud.io</sonar.host.url>
 		<sonar.sources>src/main/java</sonar.sources>
 		<sonar.tests>src/test/java</sonar.tests>
 		<sonar.java.binaries>target/classes</sonar.java.binaries>

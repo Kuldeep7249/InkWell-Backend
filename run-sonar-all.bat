@@ -4,15 +4,15 @@ setlocal EnableDelayedExpansion
 set "ROOT_DIR=%~dp0"
 
 if "%SONAR_HOST_URL%"=="" (
-    set "SONAR_HOST_URL=http://localhost:9000"
+    set "SONAR_HOST_URL=https://sonarcloud.io"
 )
 
 if "%MAVEN_GOALS%"=="" (
-    set "MAVEN_GOALS=verify sonar:sonar"
+    set "MAVEN_GOALS=clean verify sonar:sonar"
 )
 
 if "%SONAR_TOKEN%"=="" (
-    echo SONAR_TOKEN is not set. Generate a token in SonarQube and set SONAR_TOKEN before running scans.
+    echo SONAR_TOKEN is not set. Generate a token in SonarCloud and set SONAR_TOKEN before running scans.
     exit /b 1
 )
 
