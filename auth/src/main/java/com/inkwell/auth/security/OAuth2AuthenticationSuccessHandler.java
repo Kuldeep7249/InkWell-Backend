@@ -15,7 +15,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 
 @Component
 @RequiredArgsConstructor
@@ -23,32 +22,38 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
 
     private final ObjectProvider<AuthService> authServiceProvider;
 
-    @Value("${app.oauth2.authorized-redirect-uri:http://localhost:5173/oauth2/redirect}")
+    @Value("${app.oauth2.authorized-redirect-uri:http://localhost:5173/oauth2/success}")
     private String authorizedRedirectUri;
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request,
                                         HttpServletResponse response,
                                         Authentication authentication) throws IOException, ServletException {
-        OAuth2AuthenticationToken oauthToken = (OAuth2AuthenticationToken) authentication;
-        AuthResponse authResponse = authServiceProvider.getObject().oauth2Login(
-                oauthToken.getAuthorizedClientRegistrationId(),
-                oauthToken.getPrincipal().getAttributes()
-        );
+        System.out.println("=== OAuth2 Success Handler reached ===");
 
-        String redirectUrl = UriComponentsBuilder.fromUriString(authorizedRedirectUri)
-                .queryParam("accessToken", authResponse.getAccessToken())
-                .queryParam("refreshToken", authResponse.getRefreshToken())
-                .queryParam("tokenType", authResponse.getTokenType())
-                .queryParam("userId", authResponse.getUserId())
-                .queryParam("username", authResponse.getUsername())
-                .queryParam("email", authResponse.getEmail())
-                .queryParam("role", authResponse.getRole())
-                .queryParam("message", authResponse.getMessage())
-                .build()
-                .encode(StandardCharsets.UTF_8)
-                .toUriString();
+        try {
+            OAuth2AuthenticationToken oauthToken = (OAuth2AuthenticationToken) authentication;
+            System.out.println("Provider: " + oauthToken.getAuthorizedClientRegistrationId());
+            System.out.println("Attributes: " + oauthToken.getPrincipal().getAttributes());
 
-        response.sendRedirect(redirectUrl);
+            AuthResponse authResponse = authServiceProvider.getObject().oauth2Login(
+                    oauthToken.getAuthorizedClientRegistrationId(),
+                    oauthToken.getPrincipal().getAttributes()
+            );
+            System.out.println("=== oauth2Login succeeded, userId: " + authResponse.getUserId() + " ===");
+
+            String redirectUrl = UriComponentsBuilder.fromUriString(authorizedRedirectUri)
+                    .queryParam("token", authResponse.getAccessToken())
+                    .build()
+                    .toUriString();
+
+            System.out.println("=== Redirecting to: " + redirectUrl + " ===");
+            response.sendRedirect(redirectUrl);
+
+        } catch (Exception e) {
+            System.out.println("=== ERROR in OAuth2 success handler ===");
+            e.printStackTrace();
+            response.sendRedirect("http://localhost:5173/login?error=oauth");
+        }
     }
 }

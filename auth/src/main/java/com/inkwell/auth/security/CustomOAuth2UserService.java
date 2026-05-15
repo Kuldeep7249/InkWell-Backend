@@ -29,10 +29,18 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
         OAuth2User oauth2User = super.loadUser(userRequest);
         String registrationId = userRequest.getClientRegistration().getRegistrationId();
 
-        if (!"github".equalsIgnoreCase(registrationId) || oauth2User.getAttribute("email") != null) {
+        // Only fetch email separately for GitHub when it is not already present.
+        // Google always returns email in the standard attributes — no extra fetch needed.
+        if (!"github".equalsIgnoreCase(registrationId)) {
             return oauth2User;
         }
 
+        // GitHub: email is already present, no need to fetch
+        if (oauth2User.getAttribute("email") != null) {
+            return oauth2User;
+        }
+
+        // GitHub: email is hidden, fetch from /user/emails API
         Map<String, Object> attributes = new HashMap<>(oauth2User.getAttributes());
         String email = fetchPrimaryVerifiedGithubEmail(userRequest.getAccessToken().getTokenValue());
         if (email != null) {

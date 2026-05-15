@@ -4,6 +4,7 @@ import com.inkwell.auth.dto.NotificationType;
 import com.inkwell.auth.dto.ProfileResponse;
 import com.inkwell.auth.dto.RelatedType;
 import com.inkwell.auth.dto.SendNotificationRequest;
+import com.inkwell.auth.dto.UpdateUserBlockRequest;
 import com.inkwell.auth.dto.UpdateUserRoleRequest;
 import com.inkwell.auth.entity.User;
 import com.inkwell.auth.exception.ResourceNotFoundException;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -59,6 +61,82 @@ public class AdminUserController {
         return mapToProfileResponse(savedUser);
     }
 
+    @PutMapping("/{userId}/block")
+    public ProfileResponse blockUser(@PathVariable Long userId, Authentication authentication) {
+        return updateBlockedState(userId, true, authentication);
+    }
+
+    @PatchMapping("/{userId}/block")
+    public ProfileResponse patchBlockUser(@PathVariable Long userId, Authentication authentication) {
+        return updateBlockedState(userId, true, authentication);
+    }
+
+    @PutMapping("/block/{userId}")
+    public ProfileResponse blockUserAlternative(@PathVariable Long userId, Authentication authentication) {
+        return updateBlockedState(userId, true, authentication);
+    }
+
+    @PatchMapping("/block/{userId}")
+    public ProfileResponse patchBlockUserAlternative(@PathVariable Long userId, Authentication authentication) {
+        return updateBlockedState(userId, true, authentication);
+    }
+
+    @PutMapping("/{userId}/unblock")
+    public ProfileResponse unblockUser(@PathVariable Long userId, Authentication authentication) {
+        return updateBlockedState(userId, false, authentication);
+    }
+
+    @PatchMapping("/{userId}/unblock")
+    public ProfileResponse patchUnblockUser(@PathVariable Long userId, Authentication authentication) {
+        return updateBlockedState(userId, false, authentication);
+    }
+
+    @PutMapping("/unblock/{userId}")
+    public ProfileResponse unblockUserAlternative(@PathVariable Long userId, Authentication authentication) {
+        return updateBlockedState(userId, false, authentication);
+    }
+
+    @PatchMapping("/unblock/{userId}")
+    public ProfileResponse patchUnblockUserAlternative(@PathVariable Long userId, Authentication authentication) {
+        return updateBlockedState(userId, false, authentication);
+    }
+
+    @PutMapping("/{userId}/status")
+    public ProfileResponse updateUserStatus(
+            @PathVariable Long userId,
+            @RequestBody UpdateUserBlockRequest request,
+            Authentication authentication
+    ) {
+        return updateUserBlockRequest(userId, request, authentication);
+    }
+
+    @PatchMapping("/{userId}/status")
+    public ProfileResponse patchUserStatus(
+            @PathVariable Long userId,
+            @RequestBody UpdateUserBlockRequest request,
+            Authentication authentication
+    ) {
+        return updateUserBlockRequest(userId, request, authentication);
+    }
+
+    @PutMapping("/{userId}")
+    public ProfileResponse updateUser(
+            @PathVariable Long userId,
+            @RequestBody UpdateUserBlockRequest request,
+            Authentication authentication
+    ) {
+        return updateUserBlockRequest(userId, request, authentication);
+    }
+
+    @PatchMapping("/{userId}")
+    public ProfileResponse patchUser(
+            @PathVariable Long userId,
+            @RequestBody UpdateUserBlockRequest request,
+            Authentication authentication
+    ) {
+        return updateUserBlockRequest(userId, request, authentication);
+    }
+
     private void sendRoleNotification(User user, Long actorId, String title, String message) {
         notificationEventPublisher.publish(SendNotificationRequest.builder()
                 .recipientId(user.getUserId())
@@ -70,6 +148,32 @@ public class AdminUserController {
                 .relatedType(RelatedType.USER)
                 .sendEmail(false)
                 .build());
+    }
+
+    private ProfileResponse updateUserBlockRequest(Long userId, UpdateUserBlockRequest request, Authentication authentication) {
+        Boolean blocked = request == null ? null : request.resolveBlocked();
+        if (blocked == null) {
+            throw new IllegalArgumentException("Block status is required");
+        }
+        return updateBlockedState(userId, blocked, authentication);
+    }
+
+    private ProfileResponse updateBlockedState(Long userId, boolean blocked, Authentication authentication) {
+        User user = userRepository.findByUserId(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        user.setActive(!blocked);
+        User savedUser = userRepository.save(user);
+
+        Long actorId = userRepository.findByEmail(authentication.getName()).map(User::getUserId).orElse(null);
+        sendRoleNotification(
+                savedUser,
+                actorId,
+                blocked ? "Account blocked" : "Account unblocked",
+                blocked ? "Your account has been blocked by an administrator." : "Your account has been unblocked by an administrator."
+        );
+
+        return mapToProfileResponse(savedUser);
     }
 
     private ProfileResponse mapToProfileResponse(User user) {

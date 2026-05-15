@@ -35,7 +35,7 @@ app:
     secret: test-secret-key-test-secret-key-123456
     access-expiration-ms: 900000
   oauth2:
-    authorized-redirect-uri: http://localhost:5173/oauth2/redirect
+    authorized-redirect-uri: http://localhost:5173/oauth2/success
 
 eureka:
   client:
