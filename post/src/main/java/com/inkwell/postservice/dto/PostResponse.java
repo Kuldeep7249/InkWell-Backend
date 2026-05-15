@@ -21,6 +21,8 @@ public class PostResponse {
     private PostStatus status;
     private List<CategoryResponse> categories;
     private List<TagResponse> tags;
+    private long commentCount;
+    private long commentLikeCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

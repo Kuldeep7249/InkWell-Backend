@@ -2,16 +2,20 @@ package com.inkwell.auth.service;
 
 import com.inkwell.auth.dto.AuthResponse;
 import com.inkwell.auth.dto.ChangePasswordRequest;
+import com.inkwell.auth.dto.LoginOtpChallengeResponse;
 import com.inkwell.auth.dto.LoginRequest;
 import com.inkwell.auth.dto.ProfileResponse;
 import com.inkwell.auth.dto.RegisterRequest;
 import com.inkwell.auth.dto.UpdateProfileRequest;
+import com.inkwell.auth.dto.VerifyLoginOtpRequest;
 import com.inkwell.auth.entity.AuthProvider;
+import com.inkwell.auth.entity.LoginOtpChallenge;
 import com.inkwell.auth.entity.RefreshToken;
 import com.inkwell.auth.entity.Role;
 import com.inkwell.auth.entity.User;
 import com.inkwell.auth.exception.ResourceNotFoundException;
 import com.inkwell.auth.exception.UnauthorizedException;
+import com.inkwell.auth.repository.LoginOtpChallengeRepository;
 import com.inkwell.auth.repository.RefreshTokenRepository;
 import com.inkwell.auth.repository.UserRepository;
 import com.inkwell.auth.security.JwtService;
@@ -22,6 +26,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -41,7 +49,13 @@ class AuthServiceImplTest {
     @Mock
     private UserRepository userRepository;
     @Mock
+    private LoginOtpChallengeRepository loginOtpChallengeRepository;
+    @Mock
     private RefreshTokenRepository refreshTokenRepository;
+    @Mock
+    private ObjectProvider<JavaMailSender> mailSenderProvider;
+    @Mock
+    private JavaMailSender mailSender;
     @Mock
     private PasswordEncoder passwordEncoder;
     @Mock
@@ -67,6 +81,9 @@ class AuthServiceImplTest {
                 .isActive(true)
                 .createdAt(LocalDateTime.now())
                 .build();
+
+        ReflectionTestUtils.setField(authService, "mailUsername", "sender@example.com");
+        ReflectionTestUtils.setField(authService, "mailPassword", "app-password");
     }
 
     @Test
@@ -146,6 +163,75 @@ class AuthServiceImplTest {
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(UnauthorizedException.class)
                 .hasMessage("Account is deactivated");
+    }
+
+    @Test
+    void requestAndVerifyLoginOtpCompletesTwoStepLogin() {
+        LoginRequest request = new LoginRequest();
+        request.setEmailOrUsername("reader@example.com");
+        request.setPassword("secret123");
+
+        LoginOtpChallenge challenge = LoginOtpChallenge.builder()
+                .challengeId(42L)
+                .user(activeUser)
+                .otpHash("encoded-otp")
+                .loginIdentifier("reader@example.com")
+                .expiresAt(LocalDateTime.now().plusMinutes(10))
+                .failedAttempts(0)
+                .build();
+
+        when(userRepository.findByEmail("reader@example.com")).thenReturn(Optional.of(activeUser));
+        when(passwordEncoder.encode(any())).thenReturn("encoded-otp");
+        when(mailSenderProvider.getIfAvailable()).thenReturn(mailSender);
+        when(loginOtpChallengeRepository.save(any(LoginOtpChallenge.class))).thenReturn(challenge);
+
+        LoginOtpChallengeResponse response = authService.requestLoginOtp(request);
+
+        assertThat(response.getChallengeId()).isEqualTo(42L);
+        assertThat(response.getEmail()).isEqualTo("reader@example.com");
+        verify(authenticationManager).authenticate(any());
+        verify(loginOtpChallengeRepository).deleteByUser(activeUser);
+        verify(mailSender).send(any(SimpleMailMessage.class));
+
+        VerifyLoginOtpRequest verifyRequest = new VerifyLoginOtpRequest();
+        verifyRequest.setChallengeId(42L);
+        verifyRequest.setOtp("123456");
+
+        when(loginOtpChallengeRepository.findById(42L)).thenReturn(Optional.of(challenge));
+        when(passwordEncoder.matches("123456", "encoded-otp")).thenReturn(true);
+        when(jwtService.generateAccessToken(any())).thenReturn("access-token");
+
+        AuthResponse authResponse = authService.verifyLoginOtp(verifyRequest);
+
+        assertThat(authResponse.getAccessToken()).isEqualTo("access-token");
+        assertThat(challenge.isConsumed()).isTrue();
+        verify(refreshTokenRepository).save(any(RefreshToken.class));
+    }
+
+    @Test
+    void verifyLoginOtpRejectsInvalidCode() {
+        LoginOtpChallenge challenge = LoginOtpChallenge.builder()
+                .challengeId(42L)
+                .user(activeUser)
+                .otpHash("encoded-otp")
+                .loginIdentifier("reader@example.com")
+                .expiresAt(LocalDateTime.now().plusMinutes(10))
+                .failedAttempts(0)
+                .build();
+
+        VerifyLoginOtpRequest request = new VerifyLoginOtpRequest();
+        request.setChallengeId(42L);
+        request.setOtp("000000");
+
+        when(loginOtpChallengeRepository.findById(42L)).thenReturn(Optional.of(challenge));
+        when(passwordEncoder.matches("000000", "encoded-otp")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.verifyLoginOtp(request))
+                .isInstanceOf(UnauthorizedException.class)
+                .hasMessage("Invalid OTP");
+
+        assertThat(challenge.getFailedAttempts()).isEqualTo(1);
+        verify(loginOtpChallengeRepository).save(challenge);
     }
 
     @Test
@@ -249,13 +335,15 @@ class AuthServiceImplTest {
         assertThat(created.getAccessToken()).isEqualTo("oauth-token");
 
         when(userRepository.findByEmail("reader@example.com")).thenReturn(Optional.of(activeUser));
+        String longAvatarUrl = "https://example.com/" + "a".repeat(2500);
         AuthResponse updated = authService.oauth2Login("google", Map.of(
                 "email", "reader@example.com",
                 "name", "Reader Google",
-                "picture", "https://example.com/p.png"));
+                "picture", longAvatarUrl));
         assertThat(updated.getMessage()).isEqualTo("OAuth2 login successful");
         assertThat(activeUser.getProvider()).isEqualTo(AuthProvider.GOOGLE);
         assertThat(activeUser.getFullName()).isEqualTo("Reader Google");
+        assertThat(activeUser.getAvatarUrl()).hasSize(2048);
 
         assertThatThrownBy(() -> authService.oauth2Login("unknown", Map.of()))
                 .isInstanceOf(UnauthorizedException.class)

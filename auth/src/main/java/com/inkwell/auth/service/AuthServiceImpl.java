@@ -2,6 +2,7 @@ package com.inkwell.auth.service;
 
 import com.inkwell.auth.dto.*;
 import com.inkwell.auth.entity.*;
+import com.inkwell.auth.repository.LoginOtpChallengeRepository;
 import com.inkwell.auth.exception.ResourceNotFoundException;
 import com.inkwell.auth.exception.UnauthorizedException;
 import com.inkwell.auth.repository.RefreshTokenRepository;
@@ -9,6 +10,11 @@ import com.inkwell.auth.repository.UserRepository;
 import com.inkwell.auth.security.JwtService;
 import com.inkwell.auth.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.mail.MailException;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -17,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.UUID;
 
 @Service
@@ -24,13 +31,24 @@ import java.util.UUID;
 @Transactional
 public class AuthServiceImpl implements AuthService {
 
+    private static final int MAX_AVATAR_URL_LENGTH = 2048;
     private final UserRepository userRepository;
+    private final LoginOtpChallengeRepository loginOtpChallengeRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
+    private final ObjectProvider<JavaMailSender> mailSenderProvider;
 
     private static final long REFRESH_TOKEN_VALIDITY_DAYS = 7;
+    private static final int LOGIN_OTP_VALIDITY_MINUTES = 10;
+    private static final int MAX_LOGIN_OTP_ATTEMPTS = 5;
+
+    @Value("${spring.mail.username:}")
+    private String mailUsername;
+
+    @Value("${spring.mail.password:}")
+    private String mailPassword;
 
     @Override
     public AuthResponse register(RegisterRequest request) {
@@ -57,10 +75,77 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    public LoginOtpChallengeResponse requestLoginOtp(LoginRequest request) {
+        User user = findLoginUser(request.getEmailOrUsername());
+
+        if (!user.isActive()) {
+            throw new UnauthorizedException("Account is deactivated");
+        }
+
+        authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(user.getEmail(), request.getPassword())
+        );
+
+        loginOtpChallengeRepository.deleteByUser(user);
+
+        String otp = generateLoginOtp();
+        LoginOtpChallenge challenge = LoginOtpChallenge.builder()
+                .user(user)
+                .otpHash(passwordEncoder.encode(otp))
+                .loginIdentifier(request.getEmailOrUsername().trim())
+                .expiresAt(LocalDateTime.now().plusMinutes(LOGIN_OTP_VALIDITY_MINUTES))
+                .failedAttempts(0)
+                .build();
+
+        LoginOtpChallenge savedChallenge = loginOtpChallengeRepository.save(challenge);
+        sendLoginOtpEmail(user, otp, savedChallenge.getExpiresAt());
+
+        return LoginOtpChallengeResponse.builder()
+                .challengeId(savedChallenge.getChallengeId())
+                .email(user.getEmail())
+                .maskedEmail(maskEmail(user.getEmail()))
+                .expiresAt(savedChallenge.getExpiresAt())
+                .message("OTP sent to your registered email")
+                .build();
+    }
+
+    @Override
+    public AuthResponse verifyLoginOtp(VerifyLoginOtpRequest request) {
+        LoginOtpChallenge challenge = loginOtpChallengeRepository.findById(request.getChallengeId())
+                .orElseThrow(() -> new UnauthorizedException("OTP session is invalid or expired"));
+
+        if (challenge.isConsumed() || challenge.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new UnauthorizedException("OTP session is invalid or expired");
+        }
+
+        User user = challenge.getUser();
+        if (!user.isActive()) {
+            throw new UnauthorizedException("Account is deactivated");
+        }
+
+        if (!passwordEncoder.matches(request.getOtp(), challenge.getOtpHash())) {
+            int attempts = challenge.getFailedAttempts() + 1;
+            challenge.setFailedAttempts(attempts);
+            if (attempts >= MAX_LOGIN_OTP_ATTEMPTS) {
+                challenge.setConsumed(true);
+                challenge.setConsumedAt(LocalDateTime.now());
+            }
+            loginOtpChallengeRepository.save(challenge);
+            throw new UnauthorizedException(attempts >= MAX_LOGIN_OTP_ATTEMPTS
+                    ? "OTP verification failed too many times. Please request a new code"
+                    : "Invalid OTP");
+        }
+
+        challenge.setConsumed(true);
+        challenge.setConsumedAt(LocalDateTime.now());
+        loginOtpChallengeRepository.save(challenge);
+
+        return buildAuthResponse(user, "Login successful");
+    }
+
+    @Override
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmailOrUsername().trim().toLowerCase())
-                .or(() -> userRepository.findByUsername(request.getEmailOrUsername().trim()))
-                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
+        User user = findLoginUser(request.getEmailOrUsername());
 
         if (!user.isActive()) {
             throw new UnauthorizedException("Account is deactivated");
@@ -145,7 +230,7 @@ public class AuthServiceImpl implements AuthService {
             user.setBio(request.getBio().trim());
         }
         if (request.getAvatarUrl() != null) {
-            user.setAvatarUrl(request.getAvatarUrl().trim());
+            user.setAvatarUrl(normalizeAvatarUrl(request.getAvatarUrl()));
         }
 
         userRepository.save(user);
@@ -188,7 +273,7 @@ public class AuthServiceImpl implements AuthService {
                 .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
                 .fullName(fullName)
                 .role(Role.READER)
-                .avatarUrl(avatarUrl)
+                .avatarUrl(normalizeAvatarUrl(avatarUrl))
                 .provider(provider)
                 .isActive(true)
                 .build();
@@ -204,9 +289,17 @@ public class AuthServiceImpl implements AuthService {
             user.setFullName(fullName);
         }
         if (avatarUrl != null && !avatarUrl.isBlank()) {
-            user.setAvatarUrl(avatarUrl);
+            user.setAvatarUrl(normalizeAvatarUrl(avatarUrl));
         }
         return userRepository.save(user);
+    }
+
+    private User findLoginUser(String emailOrUsername) {
+        String normalizedEmail = emailOrUsername.trim().toLowerCase();
+        String normalizedUsername = emailOrUsername.trim();
+        return userRepository.findByEmail(normalizedEmail)
+                .or(() -> userRepository.findByUsername(normalizedUsername))
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
     }
 
     private AuthProvider resolveProvider(String registrationId) {
@@ -246,6 +339,23 @@ public class AuthServiceImpl implements AuthService {
         return avatarUrl == null ? null : avatarUrl.toString();
     }
 
+    private String normalizeAvatarUrl(String avatarUrl) {
+        if (avatarUrl == null) {
+            return null;
+        }
+
+        String normalized = avatarUrl.trim();
+        if (normalized.isBlank()) {
+            return null;
+        }
+
+        if (normalized.length() > MAX_AVATAR_URL_LENGTH) {
+            return normalized.substring(0, MAX_AVATAR_URL_LENGTH);
+        }
+
+        return normalized;
+    }
+
     private String generateUniqueUsername(String baseUsername) {
         String sanitized = baseUsername;
         if (sanitized == null || sanitized.isBlank()) {
@@ -266,6 +376,71 @@ public class AuthServiceImpl implements AuthService {
             candidate = truncatedBase + suffixText;
         }
         return candidate;
+    }
+
+    private String generateLoginOtp() {
+        return String.valueOf(ThreadLocalRandom.current().nextInt(100000, 1000000));
+    }
+
+    private void sendLoginOtpEmail(User user, String otp, LocalDateTime expiresAt) {
+        validateMailConfiguration();
+        JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
+        if (mailSender == null) {
+            throw new IllegalStateException("Email service is not configured. No mail sender bean is available.");
+        }
+
+        SimpleMailMessage email = new SimpleMailMessage();
+        email.setFrom(mailUsername);
+        email.setTo(user.getEmail());
+        email.setSubject("Your InkWell login OTP");
+        email.setText("""
+                Hello %s,
+
+                Your InkWell login OTP is: %s
+
+                This code will expire at %s and can be used only once.
+
+                If you did not try to sign in, please ignore this email.
+                """.formatted(user.getFullName(), otp, expiresAt));
+        try {
+            mailSender.send(email);
+        } catch (MailException ex) {
+            throw new IllegalStateException(resolveMailErrorMessage(ex));
+        }
+    }
+
+    private void validateMailConfiguration() {
+        if (mailUsername == null || mailUsername.isBlank()
+                || mailPassword == null || mailPassword.isBlank()
+                || "your_email@gmail.com".equalsIgnoreCase(mailUsername)
+                || "your_app_password".equals(mailPassword)) {
+            throw new IllegalStateException("Email service is not configured. Set real spring.mail.username and spring.mail.password values.");
+        }
+    }
+
+    private String resolveMailErrorMessage(MailException ex) {
+        Throwable cause = ex.getMostSpecificCause();
+        if (cause != null && cause.getMessage() != null && !cause.getMessage().isBlank()) {
+            return "Email delivery failed: " + cause.getMessage();
+        }
+        if (ex.getMessage() != null && !ex.getMessage().isBlank()) {
+            return "Email delivery failed: " + ex.getMessage();
+        }
+        return "Email delivery failed";
+    }
+
+    private String maskEmail(String email) {
+        int atIndex = email.indexOf("@");
+        if (atIndex <= 1) {
+            return email;
+        }
+
+        String localPart = email.substring(0, atIndex);
+        String domain = email.substring(atIndex);
+        if (localPart.length() <= 2) {
+            return localPart.charAt(0) + "*" + domain;
+        }
+        return localPart.charAt(0) + "*".repeat(localPart.length() - 2) + localPart.charAt(localPart.length() - 1) + domain;
     }
 
     private AuthResponse buildAuthResponse(User user, String message) {

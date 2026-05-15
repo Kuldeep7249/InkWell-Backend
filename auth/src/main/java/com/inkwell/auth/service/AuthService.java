@@ -6,6 +6,10 @@ public interface AuthService {
 
     AuthResponse register(RegisterRequest request);
 
+    LoginOtpChallengeResponse requestLoginOtp(LoginRequest request);
+
+    AuthResponse verifyLoginOtp(VerifyLoginOtpRequest request);
+
     AuthResponse login(LoginRequest request);
 
     AuthResponse refreshToken(RefreshTokenRequest request);

@@ -19,6 +19,7 @@ import org.springframework.security.oauth2.client.web.HttpSessionOAuth2Authoriza
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -65,6 +66,8 @@ public class SecurityConfig {
 
                         .requestMatchers(
                                 "/api/auth/register",
+                                "/api/auth/login/request-otp",
+                                "/api/auth/login/verify-otp",
                                 "/api/auth/login",
                                 "/api/auth/refresh",
                                 "/api/auth/oauth2/**",
@@ -91,7 +94,14 @@ public class SecurityConfig {
                         )
                         .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
                         .successHandler(oauth2AuthenticationSuccessHandler)
-                        .failureUrl(oauth2FailureRedirectUri)
+                        .failureHandler((request, response, exception) -> {
+                            String redirectUrl = UriComponentsBuilder.fromUriString(oauth2FailureRedirectUri)
+                                    .queryParam("error", "oauth")
+                                    .queryParam("message", exception.getMessage())
+                                    .build()
+                                    .toUriString();
+                            response.sendRedirect(redirectUrl);
+                        })
                 )
 
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

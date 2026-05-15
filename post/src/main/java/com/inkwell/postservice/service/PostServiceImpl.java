@@ -1,12 +1,14 @@
 package com.inkwell.postservice.service;
 
 import com.inkwell.postservice.client.CategoryServiceClient;
+import com.inkwell.postservice.client.CommentServiceClient;
 import com.inkwell.postservice.dto.CategoryResponse;
 import com.inkwell.postservice.dto.NotificationType;
-import com.inkwell.postservice.dto.RelatedType;
+import com.inkwell.postservice.dto.PostAnalyticsResponse;
 import com.inkwell.postservice.dto.PostRequest;
 import com.inkwell.postservice.dto.PostResponse;
 import com.inkwell.postservice.dto.PostCategoryAssignmentRequest;
+import com.inkwell.postservice.dto.RelatedType;
 import com.inkwell.postservice.dto.PostTagAssignmentRequest;
 import com.inkwell.postservice.dto.ServiceApiResponse;
 import com.inkwell.postservice.dto.SendNotificationRequest;
@@ -26,8 +28,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -39,6 +43,7 @@ public class PostServiceImpl implements PostService {
 
     private final PostRepository postRepository;
     private final CategoryServiceClient categoryServiceClient;
+    private final CommentServiceClient commentServiceClient;
     private final NotificationEventPublisher notificationEventPublisher;
 
     @Override
@@ -57,31 +62,22 @@ public class PostServiceImpl implements PostService {
 
         Post savedPost = postRepository.save(post);
         syncTaxonomy(savedPost.getId(), request.getResolvedCategoryIds(), resolveTagIds(request.getTagIds(), request.getTagNames()), authorizationHeader);
-        return mapToResponse(savedPost);
+        return mapToResponse(savedPost, fetchAnalytics(savedPost.getId()));
     }
 
     @Override
     public List<PostResponse> getAllPosts() {
-        return postRepository.findByStatus(PostStatus.APPROVED)
-                .stream()
-                .map(this::mapToResponse)
-                .toList();
+        return mapPostsToResponses(postRepository.findByStatus(PostStatus.APPROVED));
     }
 
     @Override
     public List<PostResponse> getAllPostsForAdmin() {
-        return postRepository.findAll()
-                .stream()
-                .map(this::mapToResponse)
-                .toList();
+        return mapPostsToResponses(postRepository.findAll());
     }
 
     @Override
     public List<PostResponse> getPostsByStatus(PostStatus status) {
-        return postRepository.findByStatus(status)
-                .stream()
-                .map(this::mapToResponse)
-                .toList();
+        return mapPostsToResponses(postRepository.findByStatus(status));
     }
 
     @Override
@@ -93,7 +89,7 @@ public class PostServiceImpl implements PostService {
             throw new ResourceNotFoundException("Post not found with id: " + id);
         }
 
-        return mapToResponse(post);
+        return mapToResponse(post, fetchAnalytics(post.getId()));
     }
 
     @Override
@@ -105,15 +101,12 @@ public class PostServiceImpl implements PostService {
             throw new UnauthorizedActionException("You can view only your own draft posts");
         }
 
-        return mapToResponse(post);
+        return mapToResponse(post, fetchAnalytics(post.getId()));
     }
 
     @Override
     public List<PostResponse> getPostsByUserId(Long userId) {
-        return postRepository.findByUserId(userId)
-                .stream()
-                .map(this::mapToResponse)
-                .toList();
+        return mapPostsToResponses(postRepository.findByUserId(userId));
     }
 
     @Override
@@ -134,7 +127,7 @@ public class PostServiceImpl implements PostService {
 
         Post updatedPost = postRepository.save(post);
         syncTaxonomy(updatedPost.getId(), request.getResolvedCategoryIds(), resolveTagIds(request.getTagIds(), request.getTagNames()), authorizationHeader);
-        return mapToResponse(updatedPost);
+        return mapToResponse(updatedPost, fetchAnalytics(updatedPost.getId()));
     }
 
     @Override
@@ -159,14 +152,24 @@ public class PostServiceImpl implements PostService {
         post.setUpdatedAt(LocalDateTime.now());
         Post savedPost = postRepository.save(post);
         sendPostStatusNotification(savedPost, actorId);
-        return mapToResponse(savedPost);
+        return mapToResponse(savedPost, fetchAnalytics(savedPost.getId()));
     }
 
     private boolean isAdmin(String role) {
         return "ADMIN".equals(role);
     }
 
-    private PostResponse mapToResponse(Post post) {
+    private List<PostResponse> mapPostsToResponses(List<Post> posts) {
+        Map<Long, PostAnalyticsResponse> analyticsByPostId = fetchAnalyticsByPostIds(
+                posts.stream().map(Post::getId).toList()
+        );
+
+        return posts.stream()
+                .map(post -> mapToResponse(post, analyticsByPostId.getOrDefault(post.getId(), emptyAnalytics(post.getId()))))
+                .toList();
+    }
+
+    private PostResponse mapToResponse(Post post, PostAnalyticsResponse analytics) {
         List<CategoryResponse> categories = fetchCategories(post.getId());
         List<TagResponse> tags = fetchTags(post.getId());
 
@@ -182,8 +185,51 @@ public class PostServiceImpl implements PostService {
                 .status(post.getStatus())
                 .categories(categories)
                 .tags(tags)
+                .commentCount(analytics.getCommentCount())
+                .commentLikeCount(analytics.getCommentLikeCount())
                 .createdAt(post.getCreatedAt())
                 .updatedAt(post.getUpdatedAt())
+                .build();
+    }
+
+    private Map<Long, PostAnalyticsResponse> fetchAnalyticsByPostIds(List<Long> postIds) {
+        if (postIds == null || postIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<Long> normalizedPostIds = postIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        if (normalizedPostIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        try {
+            return commentServiceClient.getPostAnalytics(normalizedPostIds).stream()
+                    .filter(Objects::nonNull)
+                    .filter(analytics -> analytics.getPostId() != null)
+                    .collect(Collectors.toMap(
+                            PostAnalyticsResponse::getPostId,
+                            analytics -> analytics,
+                            (left, right) -> left,
+                            LinkedHashMap::new
+                    ));
+        } catch (FeignException ignored) {
+            return Collections.emptyMap();
+        }
+    }
+
+    private PostAnalyticsResponse fetchAnalytics(Long postId) {
+        return fetchAnalyticsByPostIds(List.of(postId)).getOrDefault(postId, emptyAnalytics(postId));
+    }
+
+    private PostAnalyticsResponse emptyAnalytics(Long postId) {
+        return PostAnalyticsResponse.builder()
+                .postId(postId)
+                .commentCount(0)
+                .commentLikeCount(0)
                 .build();
     }
 

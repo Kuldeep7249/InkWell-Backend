@@ -4,6 +4,7 @@ import com.inkwell.commentservice.dto.ApiResponse;
 import com.inkwell.commentservice.dto.CommentRequest;
 import com.inkwell.commentservice.dto.CommentResponse;
 import com.inkwell.commentservice.dto.CommentUpdateRequest;
+import com.inkwell.commentservice.dto.PostAnalyticsResponse;
 import com.inkwell.commentservice.security.UserPrincipal;
 import com.inkwell.commentservice.service.CommentService;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -105,6 +106,11 @@ public class CommentController {
     public ResponseEntity<Long> count(@PathVariable Long postId,
                                       Authentication authentication) {
         return ResponseEntity.ok(commentService.getCommentCount(postId, isModerator(authentication)));
+    }
+
+    @GetMapping("/analytics")
+    public ResponseEntity<List<PostAnalyticsResponse>> analytics(@RequestParam List<Long> postIds) {
+        return ResponseEntity.ok(commentService.getPostAnalytics(postIds));
     }
 
     private UserPrincipal getPrincipal(Authentication authentication) {

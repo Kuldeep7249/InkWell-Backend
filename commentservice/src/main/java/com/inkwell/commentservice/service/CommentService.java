@@ -3,6 +3,7 @@ package com.inkwell.commentservice.service;
 import com.inkwell.commentservice.dto.CommentRequest;
 import com.inkwell.commentservice.dto.CommentResponse;
 import com.inkwell.commentservice.dto.CommentUpdateRequest;
+import com.inkwell.commentservice.dto.PostAnalyticsResponse;
 import com.inkwell.commentservice.security.UserPrincipal;
 
 import java.util.List;
@@ -19,4 +20,5 @@ public interface CommentService {
     void likeComment(Long commentId, UserPrincipal currentUser, String authorizationHeader);
     void unlikeComment(Long commentId, UserPrincipal currentUser);
     long getCommentCount(Long postId, boolean includePendingForModerator);
+    List<PostAnalyticsResponse> getPostAnalytics(List<Long> postIds);
 }

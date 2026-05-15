@@ -39,6 +39,7 @@ public class SecurityConfig {
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/comments/analytics").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/comments/posts/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/comments/**").hasAnyRole("READER", "AUTHOR", "ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/comments/**").hasAnyRole("AUTHOR", "ADMIN")

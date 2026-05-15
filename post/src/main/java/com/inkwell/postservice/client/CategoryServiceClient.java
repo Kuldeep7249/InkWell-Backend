@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 
 import java.util.List;
 
-@FeignClient(name = "category-service", url = "${services.category.url:http://localhost:8084}")
+@FeignClient(name = "category-service", url = "${services.category.url:http://localhost:8081}")
 public interface CategoryServiceClient {
 
     @GetMapping("/api/post-categories/{postId}")

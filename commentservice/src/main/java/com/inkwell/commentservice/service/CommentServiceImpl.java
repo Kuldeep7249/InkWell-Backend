@@ -5,6 +5,7 @@ import com.inkwell.commentservice.dto.CommentRequest;
 import com.inkwell.commentservice.dto.CommentResponse;
 import com.inkwell.commentservice.dto.CommentUpdateRequest;
 import com.inkwell.commentservice.dto.NotificationType;
+import com.inkwell.commentservice.dto.PostAnalyticsResponse;
 import com.inkwell.commentservice.dto.PostResponse;
 import com.inkwell.commentservice.dto.RelatedType;
 import com.inkwell.commentservice.dto.SendNotificationRequest;
@@ -17,13 +18,19 @@ import com.inkwell.commentservice.exception.ResourceNotFoundException;
 import com.inkwell.commentservice.messaging.NotificationEventPublisher;
 import com.inkwell.commentservice.repository.CommentLikeRepository;
 import com.inkwell.commentservice.repository.CommentRepository;
+import com.inkwell.commentservice.repository.PostCommentAnalyticsProjection;
 import com.inkwell.commentservice.security.UserPrincipal;
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -168,6 +175,49 @@ public class CommentServiceImpl implements CommentService {
         return includePendingForModerator
                 ? commentRepository.countByPostId(postId)
                 : commentRepository.countByPostIdAndStatus(postId, CommentStatus.APPROVED);
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public List<PostAnalyticsResponse> getPostAnalytics(List<Long> postIds) {
+        if (postIds == null || postIds.isEmpty()) {
+            return List.of();
+        }
+
+        Set<Long> normalizedPostIds = new LinkedHashSet<>();
+        postIds.stream()
+                .filter(java.util.Objects::nonNull)
+                .forEach(normalizedPostIds::add);
+
+        if (normalizedPostIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<PostCommentAnalyticsProjection> summaries = commentRepository.summarizeAnalyticsByPostIds(
+                new ArrayList<>(normalizedPostIds),
+                CommentStatus.APPROVED
+        );
+
+        Map<Long, PostAnalyticsResponse> summaryByPostId = new LinkedHashMap<>();
+        summaries.forEach(summary -> summaryByPostId.put(
+                summary.getPostId(),
+                PostAnalyticsResponse.builder()
+                        .postId(summary.getPostId())
+                        .commentCount(summary.getCommentCount())
+                        .commentLikeCount(summary.getCommentLikeCount())
+                        .build()
+        ));
+
+        return normalizedPostIds.stream()
+                .map(postId -> summaryByPostId.getOrDefault(
+                        postId,
+                        PostAnalyticsResponse.builder()
+                                .postId(postId)
+                                .commentCount(0)
+                                .commentLikeCount(0)
+                                .build()
+                ))
+                .toList();
     }
 
     private PostResponse ensurePublicPostExists(Long postId) {

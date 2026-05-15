@@ -25,6 +25,9 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
     @Value("${app.oauth2.authorized-redirect-uri:http://localhost:5173/oauth2/success}")
     private String authorizedRedirectUri;
 
+    @Value("${app.oauth2.failure-redirect-uri:http://localhost:5173/login?error=oauth}")
+    private String failureRedirectUri;
+
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request,
                                         HttpServletResponse response,
@@ -44,6 +47,12 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
 
             String redirectUrl = UriComponentsBuilder.fromUriString(authorizedRedirectUri)
                     .queryParam("token", authResponse.getAccessToken())
+                    .queryParam("accessToken", authResponse.getAccessToken())
+                    .queryParam("refreshToken", authResponse.getRefreshToken())
+                    .queryParam("userId", authResponse.getUserId())
+                    .queryParam("username", authResponse.getUsername())
+                    .queryParam("email", authResponse.getEmail())
+                    .queryParam("role", authResponse.getRole())
                     .build()
                     .toUriString();
 
@@ -53,7 +62,12 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
         } catch (Exception e) {
             System.out.println("=== ERROR in OAuth2 success handler ===");
             e.printStackTrace();
-            response.sendRedirect("http://localhost:5173/login?error=oauth");
+            String redirectUrl = UriComponentsBuilder.fromUriString(failureRedirectUri)
+                    .queryParam("error", "oauth")
+                    .queryParam("message", e.getMessage())
+                    .build()
+                    .toUriString();
+            response.sendRedirect(redirectUrl);
         }
     }
 }
