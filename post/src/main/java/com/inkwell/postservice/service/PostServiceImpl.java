@@ -380,7 +380,7 @@ public class PostServiceImpl implements PostService {
                 .message(message)
                 .relatedId(post.getId())
                 .relatedType(RelatedType.POST)
-                .sendEmail(false)
+                .sendEmail(true)
                 .build());
     }
 }

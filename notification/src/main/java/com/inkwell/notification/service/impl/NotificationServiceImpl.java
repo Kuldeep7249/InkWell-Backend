@@ -1,5 +1,6 @@
 package com.inkwell.notification.service.impl;
 
+import com.inkwell.notification.client.AuthServiceClient;
 import com.inkwell.notification.dto.*;
 import com.inkwell.notification.entity.Notification;
 import com.inkwell.notification.exception.NotificationDeliveryException;
@@ -25,6 +26,7 @@ import java.util.List;
 public class NotificationServiceImpl implements NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final AuthServiceClient authServiceClient;
     private final JavaMailSender mailSender;
 
     @Value("${spring.mail.username:}")
@@ -50,7 +52,7 @@ public class NotificationServiceImpl implements NotificationService {
         Notification saved = notificationRepository.save(notification);
 
         if (request.isSendEmail()) {
-            log.info("Email notification requested for recipientId={}", request.getRecipientId());
+            sendNotificationEmail(request);
         }
 
         return mapToResponse(saved);
@@ -76,7 +78,9 @@ public class NotificationServiceImpl implements NotificationService {
         List<Notification> saved = notificationRepository.saveAll(notifications);
 
         if (request.isSendEmail()) {
-            log.info("Bulk email notification requested for {} recipients", saved.size());
+            for (Long recipientId : request.getRecipientIds().stream().distinct().toList()) {
+                sendNotificationEmail(buildSingleRequestFromBulk(request, recipientId));
+            }
         }
 
         return saved.stream().map(this::mapToResponse).toList();
@@ -190,6 +194,36 @@ public class NotificationServiceImpl implements NotificationService {
                 .isRead(notification.getIsRead())
                 .createdAt(notification.getCreatedAt())
                 .build();
+    }
+
+    private void sendNotificationEmail(SendNotificationRequest request) {
+        if (request == null || request.getRecipientId() == null) {
+            return;
+        }
+
+        AuthProfileResponse recipientProfile = authServiceClient.getUserById(request.getRecipientId());
+        if (recipientProfile == null || recipientProfile.getEmail() == null || recipientProfile.getEmail().isBlank()) {
+            throw new NotificationDeliveryException("Recipient email address is not available");
+        }
+
+        EmailNotificationRequest emailRequest = new EmailNotificationRequest();
+        emailRequest.setTo(recipientProfile.getEmail());
+        emailRequest.setSubject(request.getTitle());
+        emailRequest.setBody(request.getMessage());
+        sendEmail(emailRequest);
+    }
+
+    private SendNotificationRequest buildSingleRequestFromBulk(BulkNotificationRequest bulkRequest, Long recipientId) {
+        SendNotificationRequest request = new SendNotificationRequest();
+        request.setRecipientId(recipientId);
+        request.setActorId(bulkRequest.getActorId());
+        request.setType(bulkRequest.getType());
+        request.setTitle(bulkRequest.getTitle());
+        request.setMessage(bulkRequest.getMessage());
+        request.setRelatedId(bulkRequest.getRelatedId());
+        request.setRelatedType(bulkRequest.getRelatedType());
+        request.setSendEmail(true);
+        return request;
     }
 
     private void validateMailConfiguration() {

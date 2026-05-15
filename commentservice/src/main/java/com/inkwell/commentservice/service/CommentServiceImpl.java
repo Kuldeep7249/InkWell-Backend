@@ -273,7 +273,7 @@ public class CommentServiceImpl implements CommentService {
                         .message(currentUser.getUsername() + " replied to your comment.")
                         .relatedId(comment.getCommentId())
                         .relatedType(RelatedType.COMMENT)
-                        .sendEmail(false)
+                        .sendEmail(true)
                         .build());
             }
             return;
@@ -288,7 +288,7 @@ public class CommentServiceImpl implements CommentService {
                     .message(currentUser.getUsername() + " commented on your post.")
                     .relatedId(post.getId())
                     .relatedType(RelatedType.POST)
-                    .sendEmail(false)
+                    .sendEmail(true)
                     .build());
         }
     }
@@ -306,7 +306,7 @@ public class CommentServiceImpl implements CommentService {
                 .message(currentUser.getUsername() + " liked your comment.")
                 .relatedId(comment.getCommentId())
                 .relatedType(RelatedType.COMMENT)
-                .sendEmail(false)
+                .sendEmail(true)
                 .build());
     }
 

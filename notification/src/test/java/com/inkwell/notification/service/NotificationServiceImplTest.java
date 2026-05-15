@@ -1,5 +1,7 @@
 package com.inkwell.notification.service;
 
+import com.inkwell.notification.client.AuthServiceClient;
+import com.inkwell.notification.dto.AuthProfileResponse;
 import com.inkwell.notification.dto.BulkNotificationRequest;
 import com.inkwell.notification.dto.EmailNotificationRequest;
 import com.inkwell.notification.dto.NotificationResponse;
@@ -38,6 +40,8 @@ class NotificationServiceImplTest {
 
     @Mock
     private NotificationRepository notificationRepository;
+    @Mock
+    private AuthServiceClient authServiceClient;
     @Mock
     private JavaMailSender mailSender;
 
@@ -145,6 +149,25 @@ class NotificationServiceImplTest {
         assertThatThrownBy(() -> notificationService.sendEmail(request))
                 .isInstanceOf(NotificationDeliveryException.class)
                 .hasMessageContaining("Email delivery failed");
+    }
+
+    @Test
+    void sendNotificationWithEmailResolvesRecipientAndSendsMail() {
+        SendNotificationRequest request = singleRequest();
+        request.setSendEmail(true);
+
+        AuthProfileResponse profile = new AuthProfileResponse();
+        profile.setUserId(10L);
+        profile.setEmail("reader@example.com");
+
+        when(notificationRepository.save(any(Notification.class))).thenReturn(notification);
+        when(authServiceClient.getUserById(10L)).thenReturn(profile);
+        ReflectionTestUtils.setField(notificationService, "mailUsername", "sender@example.com");
+        ReflectionTestUtils.setField(notificationService, "mailPassword", "app-password");
+
+        notificationService.send(request);
+
+        verify(mailSender).send(any(org.springframework.mail.SimpleMailMessage.class));
     }
 
     @Test
